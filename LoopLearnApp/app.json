@@ -1,0 +1,39 @@
+{
+  "expo": {
+    "name": "LoopLearn",
+    "slug": "LoopLearnApp",
+    "owner": "kcunningham408",
+    "version": "1.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0F1029"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.vibecmd.looplearn",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0F1029",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "784e40ad-b767-4925-ab26-ae58ddff3ac5"
+      }
+    }
+  }
+}
