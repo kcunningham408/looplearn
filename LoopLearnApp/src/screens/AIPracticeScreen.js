@@ -2,6 +2,8 @@ import { useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, Dimensions, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AppLogo, VibeCMDBadge } from '../components/AppLogo';
 import { FadeIn } from '../components/FadeIn';
 import { GlassCard } from '../components/GlassCard';
 import { LoopBuddy } from '../components/LoopBuddy';
@@ -51,6 +53,7 @@ const shuffleAnswers = (answers, correctIdx) => {
 
 export const AIPracticeScreen = () => {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const grade = useGameStore(s => s.grade);
   const addXp = useGameStore(s => s.addXp);
   const addQuizStreak = useGameStore(s => s.addQuizStreak);
@@ -61,6 +64,7 @@ export const AIPracticeScreen = () => {
   const quizStreak = useGameStore(s => s.quizStreak);
   const cacheQuestions = useGameStore(s => s.cacheQuestions);
   const getCachedQuestions = useGameStore(s => s.getCachedQuestions);
+  const incrementAiPractice = useGameStore(s => s.incrementAiPractice);
 
   // Setup phase state
   const [phase, setPhase] = useState('setup'); // 'setup' | 'loading' | 'quiz' | 'results'
@@ -110,7 +114,17 @@ export const AIPracticeScreen = () => {
     confettiTimer.current = setTimeout(() => setShowConfetti(false), 3500);
   }, [confettiAnims]);
 
-  useEffect(() => () => { if (confettiTimer.current) clearTimeout(confettiTimer.current); }, []);
+  useEffect(() => { 
+    return () => { 
+      if (confettiTimer.current) clearTimeout(confettiTimer.current);
+      // Stop all confetti animations
+      confettiAnims.forEach(p => {
+        p.y.stopAnimation();
+        p.opacity.stopAnimation();
+        p.rotate.stopAnimation();
+      });
+    }; 
+  }, [confettiAnims]);
 
   const accent = subject === 'math' ? COLORS.math : COLORS.science;
   const gradient = subject === 'math' ? COLORS.mathGradient : COLORS.scienceGradient;
@@ -139,7 +153,7 @@ export const AIPracticeScreen = () => {
     if (result.error) {
       // Try cached questions as fallback
       const cached = getCachedQuestions(grade, subject);
-      if (cached) {
+      if (cached && cached.questions?.length) {
         setupQuiz(cached.questions);
         return;
       }
@@ -192,10 +206,10 @@ export const AIPracticeScreen = () => {
   // SETUP PHASE
   if (phase === 'setup') {
     return (
-      <ScrollView style={st.container} contentContainerStyle={st.scroll}>
+      <ScrollView style={st.container} contentContainerStyle={[st.scroll, { paddingTop: insets.top + 20 }]}>
         <FadeIn>
-          <View style={st.setupHeader}>
-            <Text style={st.setupEmoji}>🤖</Text>
+          <View style={{ alignItems: 'center' }}>
+            <AppLogo size="md" style={{ marginBottom: 16 }} />
             <Text style={st.setupTitle}>AI Practice</Text>
             <Text style={st.setupSub}>Fresh questions generated just for you!</Text>
           </View>
@@ -205,6 +219,14 @@ export const AIPracticeScreen = () => {
           <FadeIn>
             <View style={st.errorBox}>
               <Text style={st.errorText}>⚠️ {loadError}</Text>
+              <Pressable 
+                style={st.retryButton}
+                onPress={() => { setLoadError(null); setPhase('setup'); }}
+                accessibilityRole="button"
+                accessibilityLabel="Try again"
+              >
+                <Text style={st.retryText}>Try Again</Text>
+              </Pressable>
             </View>
           </FadeIn>
         )}
@@ -279,8 +301,10 @@ export const AIPracticeScreen = () => {
         </FadeIn>
 
         <FadeIn delay={450}>
-          <Text style={st.gradeNote}>Grade {grade} · Powered by AI</Text>
+          <Text style={st.gradeNote}>Grade {grade} · Powered by VibeCMD AI</Text>
         </FadeIn>
+
+        <VibeCMDBadge style={{ marginTop: 8 }} />
       </ScrollView>
     );
   }
@@ -288,7 +312,7 @@ export const AIPracticeScreen = () => {
   // LOADING PHASE
   if (phase === 'loading') {
     return (
-      <View style={[st.container, st.centerContent]}>
+      <View style={[st.container, st.centerContent, { paddingTop: insets.top }]}>
         <LoopBuddy mood="think" size="lg" grade={grade} message="Generating questions..." />
         <ActivityIndicator size="large" color={accent} style={{ marginTop: 24 }} />
         <Text style={st.loadingText}>Creating your quiz...</Text>
@@ -304,9 +328,9 @@ export const AIPracticeScreen = () => {
 
     return (
       <View style={st.container}>
-        <ScrollView contentContainerStyle={st.scroll}>
+        <ScrollView contentContainerStyle={[st.scroll, { paddingTop: insets.top + 20 }]}>
           <FadeIn>
-            <View style={st.resultCenter}>
+            <View style={{ alignItems: 'center' }}>
               <LoopBuddy
                 mood={pct === 100 ? 'celebrate' : pct >= 50 ? 'idle' : 'encourage'}
                 size="lg" grade={grade}
@@ -400,6 +424,8 @@ export const AIPracticeScreen = () => {
               </Pressable>
             </View>
           </FadeIn>
+
+          <VibeCMDBadge />
         </ScrollView>
 
         {showConfetti && (
@@ -419,7 +445,7 @@ export const AIPracticeScreen = () => {
   // QUIZ PHASE
   if (questions.length === 0) {
     return (
-      <View style={[st.container, st.centerContent]}>
+      <View style={[st.container, st.centerContent, { paddingTop: insets.top }]}>
         <Text style={{ color: COLORS.textPrimary }}>No questions available.</Text>
         <Pressable onPress={() => setPhase('setup')} style={{ padding: 20 }}>
           <Text style={{ color: COLORS.primaryLight }}>Try Again</Text>
@@ -471,6 +497,7 @@ export const AIPracticeScreen = () => {
     // Next question or finish
     if (currentIndex + 1 >= questions.length) {
       updateDailyChallenge();
+      incrementAiPractice();
 
       wrongAnswers.forEach(wa => {
         logWrongAnswer({
@@ -499,7 +526,7 @@ export const AIPracticeScreen = () => {
 
   return (
     <View style={st.container}>
-      <View style={st.quizHeader}>
+      <View style={[st.quizHeader, { paddingTop: insets.top + 8 }]}>
         <Pressable style={st.exitBtn} onPress={() => navigation.goBack()}>
           <Text style={st.exitText}>✕</Text>
         </Pressable>
@@ -573,7 +600,6 @@ const st = StyleSheet.create({
 
   // Setup
   setupHeader: { alignItems: 'center', paddingVertical: 30 },
-  setupEmoji: { fontSize: 56, marginBottom: 12 },
   setupTitle: { ...TYPE.h1, ...TYPE.black, color: COLORS.textPrimary },
   setupSub: { ...TYPE.md, color: COLORS.textSecondary, marginTop: 6 },
   sectionLabel: { ...TYPE.xs, ...TYPE.bold, color: COLORS.textMuted, letterSpacing: 1.5, marginBottom: 12 },
@@ -601,8 +627,10 @@ const st = StyleSheet.create({
   generateBtn: { borderRadius: 20, paddingVertical: 20, alignItems: 'center', marginTop: 24 },
   generateText: { ...TYPE.xl, ...TYPE.bold, color: COLORS.white },
   gradeNote: { ...TYPE.sm, color: COLORS.textMuted, textAlign: 'center', marginTop: 16 },
-  errorBox: { backgroundColor: COLORS.wrongGlow, borderColor: COLORS.wrong, borderWidth: 1.5, borderRadius: 14, padding: 14, marginBottom: 12 },
-  errorText: { ...TYPE.sm, ...TYPE.semibold, color: COLORS.wrong },
+  errorBox: { backgroundColor: COLORS.wrongGlow, borderColor: COLORS.wrong, borderWidth: 1.5, borderRadius: 14, padding: 14, marginBottom: 12, alignItems: 'center' },
+  errorText: { ...TYPE.sm, ...TYPE.semibold, color: COLORS.wrong, marginBottom: 12 },
+  retryButton: { backgroundColor: COLORS.wrong, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12 },
+  retryText: { ...TYPE.sm, ...TYPE.bold, color: COLORS.white },
 
   // Loading
   loadingText: { ...TYPE.lg, ...TYPE.bold, color: COLORS.textPrimary, marginTop: 20 },

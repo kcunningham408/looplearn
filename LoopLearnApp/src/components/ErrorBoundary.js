@@ -10,6 +10,10 @@ export class ErrorBoundary extends React.Component {
     return { hasError: true };
   }
 
+  componentDidCatch(error, errorInfo) {
+    console.error('[ErrorBoundary]', error?.message, errorInfo?.componentStack);
+  }
+
   handleRestart = () => {
     this.setState({ hasError: false });
   };
@@ -17,11 +21,16 @@ export class ErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       return (
-        <View style={styles.container}>
+        <View style={styles.container} accessibilityRole="alert">
           <Text style={styles.emoji}>😵</Text>
           <Text style={styles.title}>Oops! Something went wrong</Text>
           <Text style={styles.subtitle}>Don't worry — your progress is saved!</Text>
-          <Pressable style={({ pressed }) => [styles.button, pressed && { opacity: 0.85, transform: [{ scale: 0.97 }] }]} onPress={this.handleRestart}>
+          <Pressable 
+            style={({ pressed }) => [styles.button, pressed && { opacity: 0.85, transform: [{ scale: 0.97 }] }]} 
+            onPress={this.handleRestart}
+            accessibilityRole="button"
+            accessibilityLabel="Try again"
+          >
             <Text style={styles.buttonText}>🔄 Try Again</Text>
           </Pressable>
         </View>

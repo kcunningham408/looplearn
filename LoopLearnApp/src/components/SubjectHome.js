@@ -7,6 +7,7 @@ import TYPE from '../config/typography';
 import lessons from '../data/lessons.json';
 import { SoundService } from '../services/SoundService';
 import { useGameStore } from '../store/useGameStore';
+import { AppLogo } from './AppLogo';
 import { BackgroundGlow } from './BackgroundGlow';
 import { FadeIn } from './FadeIn';
 import { LoopBuddy } from './LoopBuddy';
@@ -24,6 +25,7 @@ export const SubjectHome = ({ subject }) => {
 
   const handleGradeChange = (g) => {
     setGrade(g);
+    SoundService.play('tap');
   };
 
   const isMath = subject === 'math';
@@ -33,17 +35,26 @@ export const SubjectHome = ({ subject }) => {
   const emoji = isMath ? '🔢' : '🔬';
   const label = isMath ? 'Math' : 'Science';
 
+  // Compute overall subject progress
+  const totalLinks = subjectLoops.reduce((s, l) => s + (l.links?.length || 0), 0);
+  const doneLinks = subjectLoops.reduce((s, l) => {
+    return s + (l.links || []).filter(link =>
+      completedLinks.some(c => c.id === link.id)
+    ).length;
+  }, 0);
+  const overallPct = totalLinks > 0 ? Math.floor((doneLinks / totalLinks) * 100) : 0;
+
   const getProgress = (loop) => {
     if (!loop.links?.length) return 0;
     const done = loop.links.filter(l =>
-      completedLinks.some(c => (typeof c === 'string' ? c : c.id) === l.id)
+      completedLinks.some(c => c.id === l.id)
     ).length;
     return Math.floor((done / loop.links.length) * 100);
   };
 
   return (
     <BackgroundGlow subject={subject} style={{ paddingTop: insets.top }}>
-      {/* Fun Header */}
+      {/* Premium Header */}
       <View style={st.header}>
         <LinearGradient
           colors={gradient}
@@ -51,16 +62,25 @@ export const SubjectHome = ({ subject }) => {
           end={{ x: 1, y: 1 }}
           style={st.headerGradient}
         />
+        <View style={st.headerTop}>
+          <AppLogo size="sm" showText layout="horizontal" />
+        </View>
         <View style={st.headerContent}>
           <Text style={st.headerEmoji}>{emoji}</Text>
           <View style={{ flex: 1 }}>
             <Text style={st.headerTitle}>{label} · Grade {grade}</Text>
             <Text style={st.headerSub}>
-              {subjectLoops.length} loop{subjectLoops.length !== 1 ? 's' : ''} available
+              {subjectLoops.length} loop{subjectLoops.length !== 1 ? 's' : ''} · {overallPct}% complete
             </Text>
           </View>
-          <LoopBuddy mood="idle" size="sm" grade={grade} />
+          <LoopBuddy mood={overallPct > 50 ? 'celebrate' : 'idle'} size="sm" grade={grade} />
         </View>
+        {/* Mini progress bar */}
+        {totalLinks > 0 && (
+          <View style={st.headerProgress}>
+            <View style={[st.headerProgressFill, { width: `${overallPct}%`, backgroundColor: accent }]} />
+          </View>
+        )}
       </View>
 
       {/* Grade Picker */}
@@ -76,9 +96,13 @@ export const SubjectHome = ({ subject }) => {
                 selected && { backgroundColor: color, borderColor: color },
                 pressed && { opacity: 0.8, transform: [{ scale: 0.93 }] },
               ]}
-              onPress={() => handleGradeChange(g)}>
+              onPress={() => handleGradeChange(g)}
+              accessibilityRole="button"
+              accessibilityState={{ selected }}
+              accessibilityLabel={`Grade ${g}`}
+            >
               <Text style={[st.gradeNumber, selected && { color: '#FFF' }]}>{g}</Text>
-              <Text style={[st.gradeLabel, selected && { color: '#FFF' }]}>Grade</Text>
+              <Text style={[st.gradeLabel, selected && { color: 'rgba(255,255,255,0.8)' }]}>Grade</Text>
             </Pressable>
           );
         })}
@@ -88,7 +112,10 @@ export const SubjectHome = ({ subject }) => {
       <FadeIn delay={100}>
         <Pressable
           style={st.aiPracticeBtn}
-          onPress={() => { SoundService.play('tap'); navigation.navigate('AIPractice'); }}>
+          onPress={() => { SoundService.play('tap'); navigation.navigate('AIPractice'); }}
+          accessibilityRole="button"
+          accessibilityLabel="AI Practice - Unlimited AI-generated questions"
+        >
           <LinearGradient
             colors={isMath ? ['#6366F1', '#8B5CF6'] : ['#06B6D4', '#10B981']}
             style={st.aiPracticeGradient}
@@ -128,31 +155,49 @@ const st = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   header: {
     overflow: 'hidden',
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
   },
   headerGradient: {
     ...StyleSheet.absoluteFillObject,
-    opacity: 0.2,
+    opacity: 0.15,
+  },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 8,
   },
   headerContent: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 24,
-    paddingTop: 16,
-    paddingBottom: 18,
+    paddingTop: 12,
+    paddingBottom: 14,
   },
   headerEmoji: { fontSize: 36, marginRight: 14 },
   headerTitle: {
-    ...TYPE.h2,
-    ...TYPE.extrabold,
+    ...TYPE.screenTitle,
+    fontSize: 26,
     color: COLORS.textPrimary,
-    letterSpacing: -0.3,
   },
   headerSub: {
     ...TYPE.sm,
     color: COLORS.textSecondary,
     marginTop: 2,
+  },
+  headerProgress: {
+    height: 3,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 2,
+    marginHorizontal: 24,
+    marginBottom: 16,
+    overflow: 'hidden',
+  },
+  headerProgressFill: {
+    height: 3,
+    borderRadius: 2,
   },
   gradePicker: {
     flexDirection: 'row',
@@ -162,17 +207,17 @@ const st = StyleSheet.create({
     paddingBottom: 10,
   },
   gradeChip: {
-    width: 56,
-    height: 68,
+    width: 54,
+    height: 66,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 16,
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.10)',
     backgroundColor: COLORS.bgElevated,
   },
   gradeNumber: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '900',
     color: COLORS.textPrimary,
   },

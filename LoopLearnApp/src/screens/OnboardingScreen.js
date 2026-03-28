@@ -2,6 +2,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRef, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AppLogo, VibeCMDBadge } from '../components/AppLogo';
 import { LoopBuddy } from '../components/LoopBuddy';
 import COLORS, { GRADE_COLORS } from '../config/colors';
 import TYPE from '../config/typography';
@@ -11,7 +12,7 @@ const GRADE_EMOJIS = { 1: '🌟', 2: '🔥', 3: '⚡', 4: '🚀', 5: '💎', 6: 
 
 const SLIDES = [
   {
-    emoji: '🧠',
+    useLogo: true,
     mood: 'wave',
     title: 'Welcome to LoopLearn!',
     body: 'The fun way to master Math & Science for Grades 1–6.',
@@ -86,7 +87,11 @@ export const OnboardingScreen = () => {
                     <Pressable
                       key={g}
                       style={[st.gradeBtn, selectedGrade === g && { ...st.gradeSelected, borderColor: GRADE_COLORS[g], backgroundColor: `${GRADE_COLORS[g]}20` }]}
-                      onPress={() => setSelectedGrade(g)}>
+                      onPress={() => setSelectedGrade(g)}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected: selectedGrade === g }}
+                      accessibilityLabel={`Grade ${g}`}
+                    >
                       <Text style={st.gradeEmoji}>{GRADE_EMOJIS[g]}</Text>
                       <Text style={[st.gradeNum, selectedGrade === g && { color: GRADE_COLORS[g] }]}>
                         {g}
@@ -100,8 +105,12 @@ export const OnboardingScreen = () => {
           }
           return (
             <View style={[st.slide, { width }]}>
-              <LoopBuddy mood={item.mood} size="lg" message={item.title} />
-              <Text style={st.emoji}>{item.emoji}</Text>
+              {item.useLogo ? (
+                <AppLogo size="lg" layout="vertical" style={{ marginBottom: 16 }} />
+              ) : (
+                <LoopBuddy mood={item.mood} size="lg" message={item.title} />
+              )}
+              {!item.useLogo && <Text style={st.emoji}>{item.emoji}</Text>}
               <Text style={st.title}>{item.title}</Text>
               <Text style={st.body}>{item.body}</Text>
             </View>
@@ -119,7 +128,7 @@ export const OnboardingScreen = () => {
       {/* Button */}
       <View style={st.footer}>
         {showGradePicker ? (
-          <Pressable onPress={handleFinish}>
+          <Pressable onPress={handleFinish} accessibilityRole="button" accessibilityLabel="Start learning">
             <LinearGradient
               colors={COLORS.primaryGradient}
               style={st.btn}
@@ -129,7 +138,7 @@ export const OnboardingScreen = () => {
             </LinearGradient>
           </Pressable>
         ) : (
-          <Pressable onPress={handleNext}>
+          <Pressable onPress={handleNext} accessibilityRole="button" accessibilityLabel="Next slide">
             <LinearGradient
               colors={COLORS.primaryGradient}
               style={st.btn}
@@ -140,14 +149,19 @@ export const OnboardingScreen = () => {
           </Pressable>
         )}
         {!showGradePicker && (
-          <Pressable onPress={() => {
-            flatRef.current?.scrollToIndex({ index: SLIDES.length, animated: true });
-            setCurrentPage(SLIDES.length);
-          }}>
+          <Pressable 
+            onPress={() => {
+              flatRef.current?.scrollToIndex({ index: SLIDES.length, animated: true });
+              setCurrentPage(SLIDES.length);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Skip to grade selection"
+          >
             <Text style={st.skipText}>Skip</Text>
           </Pressable>
         )}
       </View>
+      <VibeCMDBadge style={{ paddingBottom: 10 }} />
     </View>
   );
 };

@@ -1,8 +1,11 @@
+import { memo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import COLORS from '../config/colors';
 import TYPE from '../config/typography';
 
-export const QuizQuestion = ({ question, selectedIndex, onSelect, answered, correctIndex }) => {
+const OPTION_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F'];
+
+export const QuizQuestion = memo(function QuizQuestion({ question, selectedIndex, onSelect, answered, correctIndex }) {
   const isTF = question.type === 'tf';
 
   const getOptionStyle = (index) => {
@@ -11,6 +14,22 @@ export const QuizQuestion = ({ question, selectedIndex, onSelect, answered, corr
     }
     if (index === correctIndex) return st.optionCorrect;
     if (index === selectedIndex && index !== correctIndex) return st.optionWrong;
+    return {};
+  };
+
+  const getLetterStyle = (index) => {
+    if (!answered) {
+      return selectedIndex === index ? { backgroundColor: COLORS.primary, borderColor: COLORS.primary } : {};
+    }
+    if (index === correctIndex) return { backgroundColor: COLORS.correct, borderColor: COLORS.correct };
+    if (index === selectedIndex && index !== correctIndex) return { backgroundColor: COLORS.wrong, borderColor: COLORS.wrong };
+    return {};
+  };
+
+  const getLetterTextStyle = (index) => {
+    if (!answered && selectedIndex === index) return { color: COLORS.white };
+    if (answered && index === correctIndex) return { color: COLORS.white };
+    if (answered && index === selectedIndex && index !== correctIndex) return { color: COLORS.white };
     return {};
   };
 
@@ -56,6 +75,9 @@ export const QuizQuestion = ({ question, selectedIndex, onSelect, answered, corr
             accessibilityRole="radio"
             accessibilityState={{ selected: selectedIndex === index }}
             accessibilityLabel={`${option}${answered && index === correctIndex ? ', correct answer' : ''}${answered && index === selectedIndex && index !== correctIndex ? ', incorrect' : ''}`}>
+            <View style={[st.optionLetter, getLetterStyle(index)]}>
+              <Text style={[st.optionLetterText, getLetterTextStyle(index)]}>{OPTION_LETTERS[index]}</Text>
+            </View>
             <Text
               style={[
                 st.optionText,
@@ -69,48 +91,67 @@ export const QuizQuestion = ({ question, selectedIndex, onSelect, answered, corr
       )}
     </View>
   );
-};
+});
 
 const st = StyleSheet.create({
   container: {
     backgroundColor: COLORS.bgElevated,
-    borderRadius: 22,
-    borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.12)',
-    padding: 20,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: COLORS.glassBorder,
+    padding: 22,
   },
   questionText: {
     ...TYPE.xl,
     ...TYPE.bold,
     color: COLORS.textPrimary,
-    marginBottom: 16,
+    marginBottom: 20,
+    lineHeight: 28,
   },
   option: {
-    padding: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
     minHeight: 56,
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1.5,
     borderColor: 'rgba(255,255,255,0.10)',
-    borderRadius: 20,
-    marginBottom: 12,
+    borderRadius: 18,
+    marginBottom: 10,
   },
   optionSelected: {
-    backgroundColor: 'rgba(139,92,246,0.18)',
+    backgroundColor: COLORS.primarySoft,
     borderColor: COLORS.primary,
   },
   optionCorrect: {
-    backgroundColor: COLORS.correctGlow,
+    backgroundColor: COLORS.correctSoft,
     borderColor: COLORS.correct,
   },
   optionWrong: {
-    backgroundColor: COLORS.wrongGlow,
+    backgroundColor: COLORS.wrongSoft,
     borderColor: COLORS.wrong,
   },
+  optionLetter: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.18)',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+  optionLetterText: {
+    ...TYPE.sm,
+    ...TYPE.bold,
+    color: COLORS.textSecondary,
+  },
   optionText: {
-    ...TYPE.xl,
+    ...TYPE.lg,
     ...TYPE.semibold,
     color: COLORS.textPrimary,
+    flex: 1,
   },
   // True/False
   tfRow: {
@@ -119,19 +160,19 @@ const st = StyleSheet.create({
   },
   tfOption: {
     flex: 1,
-    padding: 24,
+    padding: 22,
     minHeight: 80,
     borderWidth: 1.5,
     borderColor: 'rgba(255,255,255,0.10)',
-    borderRadius: 16,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
   tfTrue: {
-    backgroundColor: 'rgba(52,211,153,0.10)',
+    backgroundColor: COLORS.correctSoft,
   },
   tfFalse: {
-    backgroundColor: 'rgba(248,113,113,0.10)',
+    backgroundColor: COLORS.wrongSoft,
   },
   tfSelected: {
     backgroundColor: 'rgba(99,102,241,0.15)',

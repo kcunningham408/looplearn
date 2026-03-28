@@ -26,7 +26,9 @@ const HAPTIC_MAP = {
 
 let players = {};
 let soundEnabled = true;
+let hapticEnabled = true;
 let initialized = false;
+let isPreloading = false;
 
 async function init() {
   if (initialized) return;
@@ -42,6 +44,8 @@ async function init() {
 }
 
 async function preload() {
+  if (isPreloading) return;
+  isPreloading = true;
   await init();
   for (const [key, source] of Object.entries(SOUND_FILES)) {
     try {
@@ -51,15 +55,18 @@ async function preload() {
       // Sound file couldn't load — haptics will still work
     }
   }
+  isPreloading = false;
 }
 
 async function play(name) {
   if (!soundEnabled) return;
 
-  // Always fire haptics (works even if sound fails)
-  const haptic = HAPTIC_MAP[name];
-  if (haptic && Platform.OS !== 'web') {
-    haptic().catch(() => {});
+  // Fire haptics only if enabled (works even if sound fails)
+  if (hapticEnabled) {
+    const haptic = HAPTIC_MAP[name];
+    if (haptic && Platform.OS !== 'web') {
+      haptic().catch(() => {});
+    }
   }
 
   const player = players[name];
@@ -81,6 +88,14 @@ function isEnabled() {
   return soundEnabled;
 }
 
+function setHapticEnabled(enabled) {
+  hapticEnabled = enabled;
+}
+
+function isHapticEnabled() {
+  return hapticEnabled;
+}
+
 async function unloadAll() {
   for (const p of Object.values(players)) {
     try { p.release(); } catch {}
@@ -94,5 +109,7 @@ export const SoundService = {
   play,
   setEnabled,
   isEnabled,
+  setHapticEnabled,
+  isHapticEnabled,
   unloadAll,
 };

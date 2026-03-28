@@ -5,7 +5,7 @@ import { Animated, Pressable, StyleSheet } from 'react-native';
  * Big, bouncy, touchable button for kids.
  * Minimum 56px touch target. Scales down on press with spring-back.
  */
-export const BounceButton = ({ onPress, children, style, disabled, hitSlop = 8 }) => {
+export const BounceButton = ({ onPress, children, style, disabled, hitSlop = 8, accessibilityRole = 'button', accessibilityLabel, accessibilityState }) => {
   const scale = useRef(new Animated.Value(1)).current;
 
   const onPressIn = () => {
@@ -33,6 +33,9 @@ export const BounceButton = ({ onPress, children, style, disabled, hitSlop = 8 }
       onPressOut={onPressOut}
       disabled={disabled}
       hitSlop={hitSlop}
+      accessibilityRole={accessibilityRole}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityState={accessibilityState}
     >
       <Animated.View style={[st.base, { transform: [{ scale }] }, style]}>
         {children}

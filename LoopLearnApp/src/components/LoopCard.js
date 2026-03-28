@@ -1,4 +1,5 @@
 import { LinearGradient } from 'expo-linear-gradient';
+import { memo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import COLORS from '../config/colors';
 import TYPE from '../config/typography';
@@ -6,7 +7,7 @@ import TYPE from '../config/typography';
 // Fun emoji per loop index so each card feels unique
 const LOOP_EMOJIS = ['🚀', '⭐', '🎯', '🧩', '🌈', '🎨', '💡', '🔮', '🎪', '🏆', '🎸', '🦄'];
 
-export const LoopCard = ({ loop, progress = 0, accent, onPress, index = 0 }) => {
+export const LoopCard = memo(function LoopCard({ loop, progress = 0, accent, onPress, index = 0 }) {
   const color = accent || COLORS.primary;
   const pct = Math.min(100, Math.max(0, progress));
   const emoji = LOOP_EMOJIS[index % LOOP_EMOJIS.length];
@@ -16,7 +17,10 @@ export const LoopCard = ({ loop, progress = 0, accent, onPress, index = 0 }) => 
   return (
     <Pressable
       style={({ pressed }) => [st.card, pressed && { opacity: 0.85, transform: [{ scale: 0.97 }] }]}
-      onPress={onPress}>
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`${loop.title}, ${pct === 100 ? 'completed' : `${pct}% complete`}, ${loop.links?.length || 0} lessons`}
+    >
       <LinearGradient
         colors={gradient}
         start={{ x: 0, y: 0 }}
@@ -44,7 +48,7 @@ export const LoopCard = ({ loop, progress = 0, accent, onPress, index = 0 }) => 
       </Text>
     </Pressable>
   );
-};
+});
 
 const st = StyleSheet.create({
   card: {

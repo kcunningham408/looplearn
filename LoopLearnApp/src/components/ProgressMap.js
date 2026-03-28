@@ -54,6 +54,8 @@ export const ProgressMap = ({ loops, subject, getProgress }) => {
                   }
                 }}
                 disabled={!isUnlocked}
+                accessibilityLabel={`${loop.title}, ${isComplete ? 'completed' : isUnlocked ? `${progress}% complete` : 'locked'}`}
+                accessibilityState={{ disabled: !isUnlocked }}
               >
                 <View style={[
                   st.node,

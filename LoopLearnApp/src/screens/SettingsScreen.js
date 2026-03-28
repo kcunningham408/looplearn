@@ -2,10 +2,11 @@ import { useNavigation } from '@react-navigation/native';
 import { useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AppLogo, VibeCMDBadge } from '../components/AppLogo';
 import { FadeIn } from '../components/FadeIn';
 import { GlassCard } from '../components/GlassCard';
 import { ScreenHeader } from '../components/ScreenHeader';
-import COLORS, { GRADE_COLORS } from '../config/colors';
+import COLORS, { APP_VERSION, GRADE_COLORS } from '../config/colors';
 import TYPE from '../config/typography';
 import { SoundService } from '../services/SoundService';
 import { useGameStore } from '../store/useGameStore';
@@ -21,6 +22,7 @@ export const SettingsScreen = () => {
   const resetAllProgress = useGameStore(state => state.resetAllProgress);
   const clearLearningInsights = useGameStore(state => state.clearLearningInsights);
   const [soundOn, setSoundOn] = useState(SoundService.isEnabled());
+  const [hapticOn, setHapticOn] = useState(SoundService.isHapticEnabled());
 
   const handleResetProgress = () => {
     Alert.alert(
@@ -46,7 +48,7 @@ export const SettingsScreen = () => {
 
   return (
     <ScrollView style={[st.container, { paddingTop: insets.top }]} contentContainerStyle={{ paddingBottom: 40 }}>
-      <ScreenHeader title="Settings" subtitle="Customize your learning" emoji="⚙️" />
+      <ScreenHeader title="Settings" subtitle="Customize your learning" emoji="⚙️" showLogo />
       <View style={st.content}>
         <FadeIn>
           <GlassCard>
@@ -65,7 +67,11 @@ export const SettingsScreen = () => {
                     ]}
                     onPress={() => {
                       setGrade(g);
-                    }}>
+                    }}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    accessibilityLabel={`Grade ${g}`}
+                  >
                     <Text style={{ fontSize: 16, marginBottom: 2 }}>{GRADE_EMOJIS[g]}</Text>
                     <Text style={[st.gradeText, selected && { color }]}>{g}</Text>
                   </Pressable>
@@ -85,9 +91,28 @@ export const SettingsScreen = () => {
                 setSoundOn(next);
                 SoundService.setEnabled(next);
                 if (next) SoundService.play('tap');
-              }}>
+              }}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: soundOn }}
+              accessibilityLabel="Sound effects"
+            >
               <Text style={st.settingBtnText}>{soundOn ? '🔊 Sounds On' : '🔇 Sounds Off'}</Text>
               <Text style={st.settingBtnSub}>Tap to {soundOn ? 'mute' : 'unmute'} sound effects</Text>
+            </Pressable>
+            <Pressable
+              style={[st.settingBtn, { borderBottomWidth: 0 }]}
+              onPress={() => {
+                const next = !hapticOn;
+                setHapticOn(next);
+                SoundService.setHapticEnabled(next);
+                if (next) SoundService.play('tap');
+              }}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: hapticOn }}
+              accessibilityLabel="Haptic feedback"
+            >
+              <Text style={st.settingBtnText}>{hapticOn ? '📳 Haptics On' : '📴 Haptics Off'}</Text>
+              <Text style={st.settingBtnSub}>Tap to {hapticOn ? 'disable' : 'enable'} vibration feedback</Text>
             </Pressable>
           </GlassCard>
         </FadeIn>
@@ -121,12 +146,16 @@ export const SettingsScreen = () => {
         <FadeIn delay={300}>
           <GlassCard>
             <Text style={st.label}>ABOUT</Text>
+            <View style={st.aboutHeader}>
+              <AppLogo size="sm" showText layout="horizontal" />
+            </View>
             <Text style={st.about}>
               LoopLearn helps kids in Grades 1–6 learn Math and Science through
               bite-sized lessons and fun quizzes. Earn XP, unlock badges, and
               track your progress!
             </Text>
-            <Text style={st.version}>Version 1.1.0 · Free</Text>
+            <Text style={st.version}>Version {APP_VERSION} · Free</Text>
+            <VibeCMDBadge style={{ marginTop: 8, paddingBottom: 0 }} />
           </GlassCard>
         </FadeIn>
 
@@ -171,6 +200,9 @@ const st = StyleSheet.create({
     ...TYPE.md,
     color: COLORS.textSecondary,
     lineHeight: 22,
+  },
+  aboutHeader: {
+    marginBottom: 14,
   },
   version: {
     ...TYPE.sm,

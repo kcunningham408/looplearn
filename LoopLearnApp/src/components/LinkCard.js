@@ -1,22 +1,28 @@
 import { Ionicons } from '@expo/vector-icons';
+import { memo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import COLORS from '../config/colors';
 import TYPE from '../config/typography';
 
-export const LinkCard = ({ link, completed, scoreData, onPress, index }) => {
+export const LinkCard = memo(function LinkCard({ link, completed, scoreData, onPress, index }) {
+  const pct = completed && scoreData && scoreData.total > 0
+    ? Math.round((scoreData.score / scoreData.total) * 100) : 0;
   const scoreStars = completed && scoreData
-    ? scoreData.score === scoreData.total ? '⭐⭐⭐'
-    : scoreData.score >= scoreData.total * 0.7 ? '⭐⭐'
+    ? pct === 100 ? '⭐⭐⭐'
+    : pct >= 70 ? '⭐⭐'
     : '⭐'
     : null;
 
   return (
     <Pressable
       style={({ pressed }) => [st.card, completed && st.cardCompleted, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
-      onPress={onPress}>
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`${link.title}, ${completed ? `completed ${pct}%` : `${link.quiz?.length || 0} questions`}`}
+    >
       <View style={st.row}>
         <View style={[st.iconWrap, completed && st.iconCompleted]}>
-          <Text style={st.emoji}>{completed ? '✅' : '📖'}</Text>
+          <Text style={st.emoji}>{completed ? (pct === 100 ? '🌟' : '✅') : '📖'}</Text>
         </View>
         <View style={st.textWrap}>
           <Text style={st.title}>{link.title}</Text>
@@ -26,11 +32,11 @@ export const LinkCard = ({ link, completed, scoreData, onPress, index }) => {
               : `${link.quiz?.length || 0} question${link.quiz?.length !== 1 ? 's' : ''}`}
           </Text>
         </View>
-        <Ionicons name="chevron-forward" size={20} color={COLORS.textMuted} />
+        <Ionicons name="chevron-forward" size={20} color={completed ? COLORS.correct : COLORS.textMuted} />
       </View>
     </Pressable>
   );
-};
+});
 
 const st = StyleSheet.create({
   card: {

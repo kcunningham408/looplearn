@@ -2,10 +2,13 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, Dimensions, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AiTeacherModal } from '../components/AiTeacherModal';
+import { AppLogo, VibeCMDBadge } from '../components/AppLogo';
 import { FadeIn } from '../components/FadeIn';
 import { GlassCard } from '../components/GlassCard';
 import { LoopBuddy } from '../components/LoopBuddy';
+import { ProgressRing } from '../components/ProgressRing';
 import { QuizQuestion } from '../components/QuizQuestion';
 import { Sparkle } from '../components/Sparkle';
 import COLORS, { BADGE_DEFS } from '../config/colors';
@@ -32,6 +35,7 @@ const shuffleAnswers = (answers, correctIdx, type) => {
 export const QuizScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
+  const insets = useSafeAreaInsets();
   const { subject, loop, linkId } = route.params;
 
   const addXp = useGameStore(state => state.addXp);
@@ -46,6 +50,8 @@ export const QuizScreen = () => {
   const wrongAnswerLog = useGameStore(state => state.wrongAnswerLog);
   const quizStreak = useGameStore(state => state.quizStreak);
   const grade = useGameStore(state => state.grade);
+  const cacheExplanation = useGameStore(state => state.cacheExplanation);
+  const getCachedExplanation = useGameStore(state => state.getCachedExplanation);
 
   // 'lesson' | 'quiz' | 'review' | 'results'
   const [phase, setPhase] = useState('lesson');
@@ -65,11 +71,14 @@ export const QuizScreen = () => {
   const [lessonPage, setLessonPage] = useState(0);
 
   const link = useMemo(() => {
+    if (!lessons || !lessons[subject]) return null;
     const loopData = lessons[subject]?.find(l => l.loop === loop);
-    return loopData?.links.find(item => item.id === linkId);
+    if (!loopData?.links) return null;
+    return loopData.links.find(item => item.id === linkId);
   }, [subject, loop, linkId]);
 
   const loopData = useMemo(() => {
+    if (!lessons || !lessons[subject]) return null;
     return lessons[subject]?.find(l => l.loop === loop);
   }, [subject, loop]);
 
@@ -99,7 +108,7 @@ export const QuizScreen = () => {
   const questions = shuffledQuestions;
   // Find the next link in this loop for "Next Lesson" navigation
   const nextLinkId = useMemo(() => {
-    if (!loopData?.links) return null;
+    if (!loopData || !loopData.links || !Array.isArray(loopData.links)) return null;
     const idx = loopData.links.findIndex(l => l.id === linkId);
     if (idx >= 0 && idx < loopData.links.length - 1) return loopData.links[idx + 1].id;
     return null;
@@ -154,8 +163,16 @@ export const QuizScreen = () => {
   }, [confettiAnims]);
 
   useEffect(() => {
-    return () => { if (confettiTimer.current) clearTimeout(confettiTimer.current); };
-  }, []);
+    return () => { 
+      if (confettiTimer.current) clearTimeout(confettiTimer.current);
+      // Stop all confetti animations
+      confettiAnims.forEach(p => {
+        p.y.stopAnimation();
+        p.opacity.stopAnimation();
+        p.rotate.stopAnimation();
+      });
+    };
+  }, [confettiAnims]);
 
   // Intercept back navigation during quiz to prevent accidental exit
   useEffect(() => {
@@ -173,10 +190,21 @@ export const QuizScreen = () => {
   if (!link) {
     return (
       <View style={st.container}>
-        <Text style={{ color: COLORS.textPrimary, padding: 20 }}>Lesson not found.</Text>
-        <Pressable onPress={() => navigation.goBack()} style={{ paddingHorizontal: 20 }}>
-          <Text style={{ color: COLORS.primaryLight }}>Go Back</Text>
-        </Pressable>
+        <View style={st.errorContainer}>
+          <Text style={st.errorEmoji}>😕</Text>
+          <Text style={st.errorTitle}>Lesson Not Found</Text>
+          <Text style={st.errorText}>
+            This lesson may have been moved or doesn't exist.
+          </Text>
+          <Pressable 
+            style={st.errorButton} 
+            onPress={() => navigation.goBack()}
+            accessibilityRole="button"
+            accessibilityLabel="Go back to previous screen"
+          >
+            <Text style={st.errorButtonText}>Go Back</Text>
+          </Pressable>
+        </View>
       </View>
     );
   }
@@ -194,7 +222,10 @@ export const QuizScreen = () => {
     setQuizAttempt(a => a + 1);
     setExplanations({});
     setLoadingExplanation(null);
-    setLessonPage(0);
+    setLessonPage(prev => {
+      const maxPage = lessonPages.length - 1;
+      return prev > maxPage ? 0 : prev;
+    });
   };
 
   // Adaptive hint — check if student has prior wrong answers on this topic
@@ -220,8 +251,15 @@ export const QuizScreen = () => {
   // Request AI explanation for a wrong answer
   const handleExplainMistake = async (idx) => {
     if (explanations[idx] || loadingExplanation === idx) return;
-    setLoadingExplanation(idx);
     const item = wrongAnswers[idx];
+    // Check cache first
+    const cacheKey = `${item.question}|${item.correctAnswer}`;
+    const cached = getCachedExplanation(cacheKey);
+    if (cached) {
+      setExplanations(prev => ({ ...prev, [idx]: cached }));
+      return;
+    }
+    setLoadingExplanation(idx);
     const result = await explainMistake({
       question: item.question,
       yourAnswer: item.yourAnswer,
@@ -230,10 +268,11 @@ export const QuizScreen = () => {
       subject,
       linkTitle: link?.title,
     });
-    setExplanations(prev => ({
-      ...prev,
-      [idx]: result.explanation || result.error || 'Could not explain right now.',
-    }));
+    const explanation = result.explanation || result.error || 'Could not explain right now.';
+    setExplanations(prev => ({ ...prev, [idx]: explanation }));
+    if (result.explanation) {
+      cacheExplanation(`${item.question}|${item.correctAnswer}`, result.explanation);
+    }
     setLoadingExplanation(null);
   };
 
@@ -252,13 +291,19 @@ export const QuizScreen = () => {
     const isLegacy = totalPages === 1 && currentPage?.type === 'legacy';
 
     return (
-      <ScrollView style={st.container} contentContainerStyle={st.scroll}>
-        <Pressable style={st.exitBtn} onPress={() => navigation.goBack()}>
+      <ScrollView style={st.container} contentContainerStyle={[st.scroll, { paddingTop: insets.top + 20 }]}>
+        <Pressable 
+          style={[st.exitBtn, { top: insets.top + 16 }]} 
+          onPress={() => navigation.goBack()}
+          accessibilityRole="button"
+          accessibilityLabel="Close lesson"
+        >
           <Text style={st.exitText}>✕</Text>
         </Pressable>
 
         <FadeIn>
           <View style={st.lessonHeader}>
+            <AppLogo size="sm" style={{ marginBottom: 12 }} />
             <Text style={st.lessonEmoji}>{subject === 'math' ? '🔢' : '🔬'}</Text>
             <Text style={st.lessonTitle}>{link.title}</Text>
             {!isLegacy && (
@@ -346,11 +391,11 @@ export const QuizScreen = () => {
           ) : (
             <View style={st.lessonNav}>
               {lessonPage > 0 && (
-                <Pressable style={st.navBack} onPress={() => setLessonPage(p => p - 1)}>
+                <Pressable style={st.navBack} onPress={() => setLessonPage(p => Math.max(0, p - 1))}>
                   <Text style={st.navBackText}>← Back</Text>
                 </Pressable>
               )}
-              <Pressable style={{ flex: 1 }} onPress={() => setLessonPage(p => p + 1)}>
+              <Pressable style={{ flex: 1 }} onPress={() => setLessonPage(p => Math.min(lessonPages.length - 1, p + 1))}>
                 <LinearGradient colors={gradient} style={st.ctaButton} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
                   <Text style={st.ctaText}>Continue →</Text>
                 </LinearGradient>
@@ -378,7 +423,7 @@ export const QuizScreen = () => {
   // REVIEW PHASE — show wrong answers
   if (phase === 'review') {
     return (
-      <ScrollView style={st.container} contentContainerStyle={st.scroll}>
+      <ScrollView style={st.container} contentContainerStyle={[st.scroll, { paddingTop: insets.top + 20 }]}>
         <FadeIn>
           <View style={st.reviewHeader}>
             <Text style={st.reviewTitle}>📝 Review</Text>
@@ -447,7 +492,7 @@ export const QuizScreen = () => {
 
     return (
       <View style={st.container}>
-      <ScrollView contentContainerStyle={st.scroll}>
+      <ScrollView contentContainerStyle={[st.scroll, { paddingTop: insets.top + 20 }]}>
         <FadeIn>
           <View style={st.resultCenter}>
             <LoopBuddy
@@ -457,9 +502,16 @@ export const QuizScreen = () => {
               message={pct === 100 ? 'Amazing!' : pct >= 70 ? 'Great job!' : 'Keep trying!'}
             />
             <Sparkle active={pct >= 70} color={COLORS.gold} size={50} />
-            <Text style={st.resultEmoji}>{emoji}</Text>
+            <ProgressRing
+              value={pct}
+              size={100}
+              color={pct >= 70 ? COLORS.correct : pct >= 50 ? COLORS.gold : COLORS.wrong}
+            />
             <Text style={st.resultTitle}>
-              {pct === 100 ? 'Perfect!' : 'Quiz Complete!'}
+              {pct === 100 ? 'Perfect!' : pct >= 70 ? 'Great Work!' : 'Quiz Complete!'}
+            </Text>
+            <Text style={st.resultSubtitle}>
+              {pct === 100 ? 'You nailed every question!' : pct >= 70 ? 'Keep up the great work!' : 'Practice makes perfect!'}
             </Text>
           </View>
         </FadeIn>
@@ -542,6 +594,8 @@ export const QuizScreen = () => {
           </View>
         </FadeIn>
 
+        <VibeCMDBadge />
+
       </ScrollView>
 
         {/* Confetti overlay — outside ScrollView so it stays fixed on screen */}
@@ -604,9 +658,10 @@ export const QuizScreen = () => {
       if (isCorrect) {
         SoundService.play('correct');
         setCorrectCount(v => v + 1);
-        // Bonus XP for streaks
-        const streakBonus = quizStreak >= 4 ? 5 : 0;
-        const xpGain = 10 + streakBonus;
+        // XP: base 10 + streak bonus + late-quiz bonus
+        const streakBonus = quizStreak >= 4 ? 5 : quizStreak >= 2 ? 2 : 0;
+        const progressBonus = currentIndex >= questions.length - 2 ? 3 : 0;
+        const xpGain = 10 + streakBonus + progressBonus;
         setXpEarned(v => v + xpGain);
         const newLevel = addXp(xpGain);
         if (newLevel) { setLeveledUp(newLevel); SoundService.play('levelup'); }
@@ -633,12 +688,12 @@ export const QuizScreen = () => {
       updateDailyChallenge();
 
       // Only mark link completed if score >= 70%
-      const pct = Math.round((correctCount / questions.length) * 100);
-      if (pct >= 70) {
+      const pct = questions.length > 0 ? Math.round((correctCount / questions.length) * 100) : 0;
+      if (pct >= 70 && loopData?.links) {
         completeLink(linkId, correctCount, questions.length);
         const store = useGameStore.getState();
-        const allDone = loopData?.links.every(l =>
-          store.completedLinks.some(c => (typeof c === 'string' ? c : c.id) === l.id) || l.id === linkId
+        const allDone = loopData.links.every(l =>
+          store.completedLinks.some(c => c.id === l.id) || l.id === linkId
         );
         if (allDone) completeLoop(loop, subject);
       }
@@ -674,8 +729,13 @@ export const QuizScreen = () => {
 
   return (
     <View style={st.container}>
-      <View style={st.quizHeader}>
-        <Pressable style={st.exitBtnSmall} onPress={() => navigation.goBack()}>
+      <View style={[st.quizHeader, { paddingTop: insets.top + 8 }]}>
+        <Pressable 
+          style={st.exitBtnSmall} 
+          onPress={() => navigation.goBack()}
+          accessibilityRole="button"
+          accessibilityLabel="Exit quiz"
+        >
           <Text style={st.exitText}>✕</Text>
         </Pressable>
         <View style={{ flex: 1 }}>
@@ -743,7 +803,12 @@ export const QuizScreen = () => {
 
       <View style={st.bottomBar}>
         <View style={st.bottomRow}>
-          <Pressable style={st.askAiBtnSmall} onPress={() => setShowAi(true)}>
+          <Pressable 
+            style={st.askAiBtnSmall} 
+            onPress={() => setShowAi(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Ask AI for help"
+          >
             <Text style={st.askAiSmallText}>🤖</Text>
           </Pressable>
           <Pressable
@@ -776,6 +841,14 @@ export const QuizScreen = () => {
 const st = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   scroll: { padding: 20, paddingBottom: 40 },
+
+  // Error container
+  errorContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
+  errorEmoji: { fontSize: 64, marginBottom: 16 },
+  errorTitle: { ...TYPE.h2, ...TYPE.bold, color: COLORS.textPrimary, marginBottom: 8 },
+  errorText: { ...TYPE.md, color: COLORS.textSecondary, textAlign: 'center', marginBottom: 24 },
+  errorButton: { backgroundColor: COLORS.primary, paddingHorizontal: 32, paddingVertical: 14, borderRadius: 16 },
+  errorButtonText: { ...TYPE.md, ...TYPE.bold, color: COLORS.white },
 
   // Exit button
   exitBtn: {
@@ -908,7 +981,8 @@ const st = StyleSheet.create({
   // Results phase
   resultCenter: { alignItems: 'center', paddingVertical: 36 },
   resultEmoji: { fontSize: 72, marginBottom: 16 },
-  resultTitle: { ...TYPE.hero, ...TYPE.black, color: COLORS.textPrimary },
+  resultTitle: { ...TYPE.hero, ...TYPE.black, color: COLORS.textPrimary, marginTop: 16 },
+  resultSubtitle: { ...TYPE.md, color: COLORS.textSecondary, marginTop: 6 },
   scoreRow: { flexDirection: 'row', justifyContent: 'space-around' },
   scoreStat: { alignItems: 'center' },
   scoreValue: { ...TYPE.h2, ...TYPE.extrabold },

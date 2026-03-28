@@ -5,6 +5,8 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 
+const { generateMathQuestions } = require('./mathGenerator');
+
 const app = express();
 const PORT = process.env.PORT || 4000;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
@@ -302,33 +304,34 @@ Analyze their learning patterns and return JSON.`;
   }
 });
 
-// ── AI Question Generation — grade-appropriate quiz questions on demand ──
+// ── AI Question Generation — science questions only (math is deterministic) ──
 const QUESTION_GEN_PROMPT = `You are a quiz question generator for an educational kids' app (Grades 1–6).
-Generate quiz questions that are age-appropriate, educational, and fun.
+Generate science quiz questions that are age-appropriate, educational, and fun.
 
 RULES:
 - Questions must be grade-appropriate in difficulty and vocabulary.
 - Each question MUST have exactly 4 answer options for multiple choice.
 - Exactly ONE answer must be correct.
 - Wrong answers must be plausible (not obviously silly) but clearly wrong.
-- Include a mix of conceptual understanding and applied knowledge.
 - Make questions engaging — use real-world scenarios kids relate to.
-- For younger grades (1-2): use simple language, concrete examples, numbers under 20.
-- For middle grades (3-4): introduce word problems, larger numbers, basic concepts.
-- For upper grades (5-6): use more complex scenarios, multi-step thinking, deeper concepts.
+- For younger grades (1-2): use simple language, concrete examples.
+- For middle grades (3-4): introduce basic concepts and scientific thinking.
+- For upper grades (5-6): use more complex scenarios and deeper concepts.
+- Always place the correct answer at index 0 in the "a" array, then set "correct": 0.
 
 RESPONSE FORMAT (JSON array only, no other text):
 [
   {
     "q": "Question text?",
-    "a": ["Option A", "Option B", "Option C", "Option D"],
+    "a": ["Correct Answer", "Wrong Option B", "Wrong Option C", "Wrong Option D"],
     "correct": 0,
     "type": "mcq",
-    "explanation": "Brief explanation of why the answer is correct"
+    "explanation": "Brief explanation of why the answer is correct."
   }
 ]
 
 The "correct" field is the 0-based index of the correct answer in the "a" array.
+ALWAYS put the correct answer at index 0 and set "correct": 0.
 ONLY return valid JSON array. No markdown, no backticks, no extra text.`;
 
 app.post('/api/generate-questions', aiLimiter, async (req, res) => {
@@ -341,19 +344,25 @@ app.post('/api/generate-questions', aiLimiter, async (req, res) => {
     if (!subject || !['math', 'science'].includes(subject)) {
       return res.status(400).json({ error: 'Subject must be math or science.' });
     }
+
+    const questionCount = Math.min(Math.max(parseInt(count) || 5, 3), 10);
+
+    // ── Math: deterministic generation (100% accuracy, no LLM) ──
+    if (subject === 'math') {
+      const questions = generateMathQuestions({ grade, topics, count: questionCount, difficulty });
+      return res.json({ questions, grade, subject, difficulty });
+    }
+
+    // ── Science: LLM generation ──
     if (!GROQ_API_KEY) {
       return res.status(503).json({ error: 'AI is not configured.' });
     }
 
-    const questionCount = Math.min(Math.max(parseInt(count) || 5, 3), 10);
-
     const topicList = Array.isArray(topics) && topics.length > 0
       ? topics.join(', ')
-      : subject === 'math'
-        ? getDefaultMathTopics(grade)
-        : getDefaultScienceTopics(grade);
+      : getDefaultScienceTopics(grade);
 
-    const userPrompt = `Generate ${questionCount} ${subject} questions for Grade ${grade}.
+    const userPrompt = `Generate ${questionCount} science questions for Grade ${grade}.
 Topics: ${topicList}.
 Difficulty: ${difficulty}.
 Return JSON array with question, 4 options, correct answer index, type "mcq", and explanation.`;
@@ -370,7 +379,7 @@ Return JSON array with question, 4 options, correct answer index, type "mcq", an
           { role: 'user', content: userPrompt },
         ],
         model: GROQ_MODEL,
-        temperature: 0.8,
+        temperature: 0.5,
         max_tokens: 2000,
       }),
     });
@@ -389,7 +398,6 @@ Return JSON array with question, 4 options, correct answer index, type "mcq", an
       const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
       const questions = JSON.parse(cleaned);
 
-      // Validate the questions
       if (!Array.isArray(questions) || questions.length === 0) {
         return res.status(502).json({ error: 'Invalid questions generated. Try again!' });
       }
@@ -417,18 +425,6 @@ Return JSON array with question, 4 options, correct answer index, type "mcq", an
     res.status(500).json({ error: 'Something went wrong.' });
   }
 });
-
-function getDefaultMathTopics(grade) {
-  const topics = {
-    1: 'addition, subtraction, counting, shapes, patterns',
-    2: 'addition, subtraction, place value, measurement, time',
-    3: 'multiplication, division, fractions, geometry, word problems',
-    4: 'multiplication, division, fractions, decimals, area, perimeter',
-    5: 'fractions, decimals, percentages, volume, coordinate planes, order of operations',
-    6: 'ratios, proportions, integers, expressions, equations, statistics',
-  };
-  return topics[grade] || topics[3];
-}
 
 function getDefaultScienceTopics(grade) {
   const topics = {

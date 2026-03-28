@@ -3,10 +3,10 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { DarkTheme, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useEffect } from 'react';
-import { ActivityIndicator, Platform, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { ActivityIndicator, Animated, Easing, Platform, StyleSheet, View } from 'react-native';
+import { AppLogo, VibeCMDBadge } from '../components/AppLogo';
 import COLORS from '../config/colors';
-import TYPE from '../config/typography';
 import { AIPracticeScreen } from '../screens/AIPracticeScreen';
 import { LoopDetail } from '../screens/LoopDetail';
 import { MathHome } from '../screens/MathHome';
@@ -42,59 +42,105 @@ const LoopLearnTheme = {
   },
 };
 
-const SplashScreen = () => (
-  <View style={splashSt.container}>
-    <LinearGradient
-      colors={['rgba(99,102,241,0.15)', 'rgba(139,92,246,0.08)', 'transparent']}
-      style={splashSt.glow}
-      start={{ x: 0.5, y: 0 }}
-      end={{ x: 0.5, y: 1 }}
-    />
-    <View style={splashSt.logoRing}>
+const SplashScreen = () => {
+  const pulseAnim = useRef(new Animated.Value(0.7)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
+
+  useEffect(() => {
+    // Logo entrance
+    Animated.parallel([
+      Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 0, duration: 600, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+    ]).start();
+
+    // Gentle pulse on logo
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1, duration: 1200, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 0.7, duration: 1200, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      ])
+    ).start();
+  }, []);
+
+  return (
+    <View style={splashSt.container}>
+      {/* Top glow */}
       <LinearGradient
-        colors={COLORS.brandGradient}
-        style={splashSt.logoGradient}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-      >
-        <Text style={splashSt.emoji}>🧠</Text>
-      </LinearGradient>
+        colors={['rgba(99,102,241,0.20)', 'rgba(139,92,246,0.10)', 'transparent']}
+        style={splashSt.glow}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+      />
+      {/* Bottom glow */}
+      <LinearGradient
+        colors={['transparent', 'rgba(236,72,153,0.08)']}
+        style={splashSt.glowBottom}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+      />
+
+      <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
+        <AppLogo size="xl" showText showTagline layout="vertical" />
+      </Animated.View>
+
+      <Animated.View style={{ opacity: pulseAnim, marginTop: 32 }}>
+        <ActivityIndicator color={COLORS.primary} size="small" />
+      </Animated.View>
+
+      <VibeCMDBadge style={splashSt.badge} />
     </View>
-    <Text style={splashSt.title}>LoopLearn</Text>
-    <Text style={splashSt.tagline}>Learning is an adventure!</Text>
-    <ActivityIndicator color={COLORS.primary} size="small" style={{ marginTop: 24 }} />
-  </View>
-);
+  );
+};
 
 const splashSt = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg, alignItems: 'center', justifyContent: 'center' },
   glow: { position: 'absolute', top: 0, left: 0, right: 0, height: '50%' },
-  logoRing: { marginBottom: 20, borderRadius: 40, overflow: 'hidden' },
-  logoGradient: { width: 100, height: 100, borderRadius: 40, alignItems: 'center', justifyContent: 'center' },
-  emoji: { fontSize: 52 },
-  title: { ...TYPE.hero, ...TYPE.black, color: COLORS.textPrimary, letterSpacing: -1 },
-  tagline: { ...TYPE.md, color: COLORS.primaryLight, marginTop: 6 },
+  glowBottom: { position: 'absolute', bottom: 0, left: 0, right: 0, height: '30%' },
+  badge: { position: 'absolute', bottom: 50, left: 40, right: 40 },
+});
+
+const TabIcon = ({ route, focused }) => {
+  const icons = TAB_ICONS[route.name];
+  const iconName = focused ? icons.focused : icons.unfocused;
+  const iconColor = focused ? icons.color : 'rgba(255,255,255,0.35)';
+  return (
+    <View style={tabIconSt.wrapper}>
+      {focused && (
+        <View style={[tabIconSt.activeIndicator, { backgroundColor: `${icons.color}20` }]} />
+      )}
+      <Ionicons name={iconName} size={24} color={iconColor} />
+    </View>
+  );
+};
+
+const tabIconSt = StyleSheet.create({
+  wrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 48,
+    height: 32,
+  },
+  activeIndicator: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 12,
+  },
 });
 
 const MainTabs = () => (
   <Tab.Navigator
     screenOptions={({ route }) => ({
       headerShown: false,
-      tabBarIcon: ({ focused, color, size }) => {
-        const icons = TAB_ICONS[route.name];
-        const iconName = focused ? icons.focused : icons.unfocused;
-        const iconColor = focused ? icons.color : 'rgba(255,255,255,0.40)';
-        return <Ionicons name={iconName} size={28} color={iconColor} />;
-      },
+      tabBarIcon: ({ focused }) => <TabIcon route={route} focused={focused} />,
       tabBarActiveTintColor: TAB_ICONS[route.name]?.color || COLORS.white,
-      tabBarInactiveTintColor: 'rgba(255,255,255,0.40)',
-      tabBarLabelStyle: { fontSize: 12, fontWeight: '700' },
+      tabBarInactiveTintColor: 'rgba(255,255,255,0.35)',
+      tabBarLabelStyle: { fontSize: 11, fontWeight: '700', marginTop: -2 },
       tabBarStyle: {
         backgroundColor: COLORS.bgElevated,
-        borderTopColor: 'rgba(255,255,255,0.08)',
+        borderTopColor: COLORS.divider,
         borderTopWidth: 1,
-        paddingTop: 10,
-        height: Platform.OS === 'web' ? 64 : Platform.OS === 'ios' ? 96 : 72,
+        paddingTop: 8,
+        height: Platform.OS === 'web' ? 64 : Platform.OS === 'ios' ? 92 : 68,
       },
     })}>
     <Tab.Screen name="Math" component={MathHome} />
@@ -129,9 +175,9 @@ export const RootNavigator = () => {
           <Stack.Screen name="Onboarding" component={OnboardingScreen} options={{ headerShown: false }} />
         )}
         <Stack.Screen name="Home" component={MainTabs} options={{ headerShown: false }} />
-        <Stack.Screen name="LoopDetail" component={LoopDetail} options={{ title: 'Loop Detail' }} />
-        <Stack.Screen name="QuizScreen" component={QuizScreen} options={{ title: 'Lesson', headerBackTitle: 'Back' }} />
-        <Stack.Screen name="AIPractice" component={AIPracticeScreen} options={{ title: 'AI Practice', headerBackTitle: 'Back' }} />
+        <Stack.Screen name="LoopDetail" component={LoopDetail} options={{ title: 'Loop Detail', headerBackTitle: 'Back' }} />
+        <Stack.Screen name="QuizScreen" component={QuizScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="AIPractice" component={AIPracticeScreen} options={{ headerShown: false }} />
         <Stack.Screen name="ParentDashboard" component={ParentDashboard} options={{ title: 'Parent Area', headerBackTitle: 'Back' }} />
       </Stack.Navigator>
     </NavigationContainer>

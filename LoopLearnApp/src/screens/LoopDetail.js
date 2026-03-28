@@ -1,6 +1,7 @@
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { AppLogo } from '../components/AppLogo';
 import { FadeIn } from '../components/FadeIn';
 import { LinkCard } from '../components/LinkCard';
 import { ProgressRing } from '../components/ProgressRing';
@@ -22,9 +23,14 @@ export const LoopDetail = () => {
 
   if (!loopData) {
     return (
-      <View style={st.container}>
+      <View style={st.container} accessibilityRole="alert">
         <Text style={st.title}>Loop not found</Text>
-        <Pressable onPress={() => navigation.goBack()} style={{ paddingHorizontal: 20, paddingTop: 8 }}>
+        <Pressable
+          onPress={() => navigation.goBack()}
+          style={{ paddingHorizontal: 20, paddingTop: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
           <Text style={{ color: COLORS.primaryLight }}>Go Back</Text>
         </Pressable>
       </View>
@@ -32,7 +38,7 @@ export const LoopDetail = () => {
   }
 
   const done = loopData.links.filter(l =>
-    completedLinks.some(c => (typeof c === 'string' ? c : c.id) === l.id)
+    completedLinks.some(c => c.id === l.id)
   ).length;
   const pct = loopData.links.length > 0 ? Math.floor((done / loopData.links.length) * 100) : 0;
   const gradeColor = GRADE_COLORS[loopData.grade] || COLORS.primary;
@@ -49,7 +55,10 @@ export const LoopDetail = () => {
           />
           <View style={st.headerContent}>
             <View style={st.headerText}>
-              <Text style={st.title}>{loopData.title}</Text>
+              <View style={st.titleRow}>
+                <Text style={st.title}>{loopData.title}</Text>
+                <AppLogo size="xs" />
+              </View>
               <View style={st.metaRow}>
                 <View style={[st.gradeBadge, { backgroundColor: `${gradeColor}25`, borderColor: `${gradeColor}50` }]}>
                   <Text style={[st.gradeBadgeText, { color: gradeColor }]}>Grade {loopData.grade}</Text>
@@ -71,12 +80,14 @@ export const LoopDetail = () => {
         data={loopData.links}
         keyExtractor={item => item.id}
         contentContainerStyle={st.list}
+        initialNumToRender={8}
+        maxToRenderPerBatch={5}
         renderItem={({ item, index }) => (
           <FadeIn delay={150 + index * 80}>
             <LinkCard
               link={item}
-              completed={completedLinks.some(c => (typeof c === 'string' ? c : c.id) === item.id)}
-              scoreData={completedLinks.find(c => (typeof c === 'object' && c.id === item.id))}
+              completed={completedLinks.some(c => c.id === item.id)}
+              scoreData={completedLinks.find(c => c.id === item.id)}
               onPress={() => navigation.navigate('QuizScreen', { subject, loop, linkId: item.id })}
             />
           </FadeIn>
@@ -102,11 +113,17 @@ const st = StyleSheet.create({
     paddingBottom: 18,
   },
   headerText: { flex: 1 },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
   title: {
     ...TYPE.h3,
     ...TYPE.extrabold,
     color: COLORS.textPrimary,
-    marginBottom: 8,
+    flex: 1,
   },
   metaRow: {
     flexDirection: 'row',

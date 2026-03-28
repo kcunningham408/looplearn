@@ -18,9 +18,11 @@ export const ProfileScreen = () => {
   const level = useGameStore(s => s.level);
   const dailyStreak = useGameStore(s => s.dailyStreak);
   const quizStreak = useGameStore(s => s.quizStreak);
+  const bestQuizStreak = useGameStore(s => s.bestQuizStreak);
   const badges = useGameStore(s => s.badges);
   const completedLoops = useGameStore(s => s.completedLoops);
   const completedLinks = useGameStore(s => s.completedLinks);
+  const totalQuizzesCompleted = useGameStore(s => s.totalQuizzesCompleted);
   const streakDates = useGameStore(s => s.streakDates);
   const dailyChallenge = useGameStore(s => s.dailyChallenge);
   const wrongAnswerLog = useGameStore(s => s.wrongAnswerLog);
@@ -72,7 +74,7 @@ export const ProfileScreen = () => {
 
   return (
     <ScrollView style={[st.container, { paddingTop: insets.top }]} contentContainerStyle={{ paddingBottom: 40 }}>
-      <ScreenHeader title="Profile" subtitle="Your learning journey" emoji="👤" />
+      <ScreenHeader title="Profile" subtitle="Your learning journey" emoji="👤" showLogo />
       <View style={st.content}>
         <FadeIn delay={0}>
           <View style={{ alignItems: 'center', marginBottom: 8 }}>
@@ -110,7 +112,14 @@ export const ProfileScreen = () => {
           <View style={st.statsRow}>
             <StatBox emoji="🏅" label="Badges" value={badges.length} color={COLORS.gold} />
             <StatBox emoji="🔁" label="Loops" value={(completedLoops || []).length} color={COLORS.primary} />
+            <StatBox emoji="🏆" label="Best" value={bestQuizStreak || 0} color={COLORS.math} />
+          </View>
+        </FadeIn>
+
+        <FadeIn delay={175}>
+          <View style={st.statsRow}>
             <StatBox emoji="📚" label="Lessons" value={(completedLinks || []).length} color={COLORS.science} />
+            <StatBox emoji="📝" label="Quizzes" value={totalQuizzesCompleted || 0} color={COLORS.primary} />
           </View>
         </FadeIn>
 
