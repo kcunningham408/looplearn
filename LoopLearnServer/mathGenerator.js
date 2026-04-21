@@ -318,7 +318,12 @@ function timeQ() {
     const s = `${h}:${String(m).padStart(2, '0')}`;
     if (s !== answer && !wrongOpts.includes(s)) wrongOpts.push(s);
   });
-  while (wrongOpts.length < 3) wrongOpts.push(`${rand(1, 12)}:${String(pick([0, 15, 30, 45])).padStart(2, '0')}`);
+  let fallbackAttempts = 0;
+  while (wrongOpts.length < 3 && fallbackAttempts < 20) {
+    const s = `${rand(1, 12)}:${String(pick([0, 15, 30, 45])).padStart(2, '0')}`;
+    if (s !== answer && !wrongOpts.includes(s)) wrongOpts.push(s);
+    fallbackAttempts++;
+  }
 
   return buildQuestion(
     `If the time is ${timeStr} and ${addMin} minutes pass, what time will it be?`,
@@ -388,10 +393,17 @@ function ratiosQ(grade, difficulty) {
   const templates = [
     // Simplify
     () => {
+      const sn = a / g, sd = b / g;
       return {
         q: `Simplify the ratio ${a}:${b}.`,
         answer: simplified,
-        wrong: [`${a}:${b}`, `${b / g}:${a / g}`, `${a / g + 1}:${b / g}`].filter(x => x !== simplified).slice(0, 3),
+        wrong: [
+          `${a}:${b}`,          // unsimplified
+          `${sd}:${sn}`,        // reversed
+          `${sn + 1}:${sd}`,    // off by 1 numerator
+          `${sn}:${sd + 1}`,    // off by 1 denominator
+          `${sn + 1}:${sd + 1}`,
+        ].filter(x => x !== simplified).slice(0, 3),
         expl: `GCD of ${a} and ${b} is ${g}. ${a}/${g} : ${b}/${g} = ${simplified}`,
       };
     },
@@ -439,7 +451,12 @@ function ratiosQ(grade, difficulty) {
   const t = pick(templates)();
   const wrongArr = Array.isArray(t.wrong) && t.wrong.length >= 3
     ? t.wrong.slice(0, 3)
-    : distractors(typeof t.answer === 'number' ? t.answer : 0, 3, { min: 0 });
+    : typeof t.answer === 'number'
+      ? distractors(t.answer, 3, { min: 0 })
+      : [`${String(t.answer).split(':')[0]}:${(parseInt(String(t.answer).split(':')[1]) || 1) + 1}`,
+         `${(parseInt(String(t.answer).split(':')[0]) || 1) + 1}:${String(t.answer).split(':')[1]}`,
+         `${String(t.answer).split(':').reverse().join(':')}`
+        ].filter(x => x !== String(t.answer));
   return buildQuestion(t.q, t.answer, wrongArr, t.expl);
 }
 

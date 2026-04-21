@@ -310,28 +310,31 @@ Generate science quiz questions that are age-appropriate, educational, and fun.
 
 RULES:
 - Questions must be grade-appropriate in difficulty and vocabulary.
-- Each question MUST have exactly 4 answer options for multiple choice.
-- Exactly ONE answer must be correct.
-- Wrong answers must be plausible (not obviously silly) but clearly wrong.
+- Each question MUST have exactly 4 answer options.
+- Exactly ONE answer must be correct. The other three must be wrong.
+- Wrong answers must be plausible (not obviously silly) but clearly incorrect.
 - Make questions engaging — use real-world scenarios kids relate to.
 - For younger grades (1-2): use simple language, concrete examples.
 - For middle grades (3-4): introduce basic concepts and scientific thinking.
 - For upper grades (5-6): use more complex scenarios and deeper concepts.
-- Always place the correct answer at index 0 in the "a" array, then set "correct": 0.
+- CRITICAL: Questions MUST test science KNOWLEDGE and FACTS only (e.g. "What do plants need to make food?"). NEVER generate questions that require arithmetic, calculations, counting, or any math operations. If a question requires computing a number, discard it and write a factual science question instead.
+- ALWAYS place the correct answer as the FIRST element (index 0) in the "a" array. Set "correct" to 0.
+- Every answer option must be unique — no duplicates in the "a" array.
+- Include a "correctAnswer" field with the exact text of the correct answer (must match "a"[0] exactly).
 
 RESPONSE FORMAT (JSON array only, no other text):
 [
   {
     "q": "Question text?",
-    "a": ["Correct Answer", "Wrong Option B", "Wrong Option C", "Wrong Option D"],
+    "a": ["Correct answer", "Wrong answer B", "Wrong answer C", "Wrong answer D"],
     "correct": 0,
+    "correctAnswer": "Correct answer",
     "type": "mcq",
-    "explanation": "Brief explanation of why the answer is correct."
+    "explanation": "Brief explanation of why the correct answer is right."
   }
 ]
 
-The "correct" field is the 0-based index of the correct answer in the "a" array.
-ALWAYS put the correct answer at index 0 and set "correct": 0.
+The "correct" field is ALWAYS 0. The "correctAnswer" field MUST match "a"[0] exactly.
 ONLY return valid JSON array. No markdown, no backticks, no extra text.`;
 
 app.post('/api/generate-questions', aiLimiter, async (req, res) => {
@@ -362,10 +365,11 @@ app.post('/api/generate-questions', aiLimiter, async (req, res) => {
       ? topics.join(', ')
       : getDefaultScienceTopics(grade);
 
-    const userPrompt = `Generate ${questionCount} science questions for Grade ${grade}.
+    const userPrompt = `Generate ${questionCount} science knowledge questions for Grade ${grade}.
 Topics: ${topicList}.
 Difficulty: ${difficulty}.
-Return JSON array with question, 4 options, correct answer index, type "mcq", and explanation.`;
+IMPORTANT: Questions must test science facts and concepts only — do NOT include any math calculations or arithmetic.
+Return JSON array with question, 4 options (correct answer first), correctAnswer text, type "mcq", and explanation.`;
 
     const response = await fetch(GROQ_URL, {
       method: 'POST',
@@ -403,16 +407,32 @@ Return JSON array with question, 4 options, correct answer index, type "mcq", an
       }
 
       const validated = questions
-        .filter(q => q.q && Array.isArray(q.a) && q.a.length === 4 && typeof q.correct === 'number' && q.correct >= 0 && q.correct <= 3)
-        .map(q => ({
-          q: String(q.q),
-          a: q.a.map(String),
-          correct: q.correct,
-          type: q.type || 'mcq',
-          explanation: q.explanation || null,
-        }));
+        .filter(q => {
+          if (!q.q || !Array.isArray(q.a) || q.a.length !== 4) return false;
+          // Reject if any answers are duplicates
+          const lower = q.a.map(s => String(s).trim().toLowerCase());
+          if (new Set(lower).size !== lower.length) return false;
+          // Must have at least one non-empty answer to use as correct
+          if (!q.correctAnswer && !q.a[0]) return false;
+          return true;
+        })
+        .map(q => {
+          // Derive correct index from the correctAnswer text field (more reliable than
+          // trusting the LLM's numeric count). Fall back to index 0 (per prompt instructions).
+          const correctText = String(q.correctAnswer || q.a[0]).trim().toLowerCase();
+          const textMatchIdx = q.a.findIndex(a => String(a).trim().toLowerCase() === correctText);
+          const correctIdx = textMatchIdx !== -1 ? textMatchIdx : 0;
+          return {
+            q: String(q.q),
+            a: q.a.map(String),
+            correct: correctIdx,
+            type: q.type || 'mcq',
+            explanation: q.explanation || null,
+          };
+        });
 
       if (validated.length === 0) {
+        console.error('All generated questions failed validation. Raw response:', text.slice(0, 500));
         return res.status(502).json({ error: 'Questions failed validation. Try again!' });
       }
 
@@ -437,6 +457,186 @@ function getDefaultScienceTopics(grade) {
   };
   return topics[grade] || topics[3];
 }
+
+// ── Lesson Summary — kid-friendly or parent-friendly recap after loop ──
+const KID_SUMMARY_PROMPT = `You are LoopBot, a friendly AI tutor for kids (Grades 1–6).
+A student just finished a lesson. Write a fun, encouraging summary of what they learned.
+RULES:
+- Start with "Today you learned..."
+- Use simple language for the student's grade level
+- Keep it SHORT: 3-4 sentences
+- Use 2-3 emoji to make it fun and celebratory
+- Be warm and encouraging`;
+
+const PARENT_SUMMARY_PROMPT = `You are LoopBot, an educational AI assistant.
+A student completed a lesson. Summarize it for their parent.
+RULES:
+- Write professionally and warmly
+- 1 sentence overview, then 2-3 bullet points of key concepts covered
+- 1 closing sentence about how this fits the curriculum
+- Under 6 sentences total, no emoji`;
+
+app.post('/api/lesson-summary', aiLimiter, async (req, res) => {
+  try {
+    const { grade, subject, loopTitle, sections, keyPoints, mode = 'kid' } = req.body;
+    if (!grade || grade < 1 || grade > 6) return res.status(400).json({ error: 'Grade required.' });
+    if (!loopTitle) return res.status(400).json({ error: 'Loop title required.' });
+    if (!GROQ_API_KEY) return res.status(503).json({ error: 'AI not configured.' });
+
+    const content = [
+      sections?.slice(0, 4).map(s => `${s.heading}: ${s.content}`).join('\n'),
+      keyPoints?.length ? `Key points: ${keyPoints.slice(0, 5).join(', ')}` : '',
+    ].filter(Boolean).join('\n').slice(0, 800);
+
+    const systemPrompt = mode === 'parent' ? PARENT_SUMMARY_PROMPT : KID_SUMMARY_PROMPT;
+    const userPrompt = `Grade ${grade} student completed "${loopTitle}" (${subject}).\n\nLesson content:\n${content}\n\nWrite a ${mode === 'parent' ? 'parent-friendly professional' : 'fun kid-friendly'} summary.`;
+
+    const response = await fetch(GROQ_URL, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        model: GROQ_MODEL,
+        temperature: 0.6,
+        max_tokens: 220,
+      }),
+    });
+    if (!response.ok) return res.status(502).json({ error: 'AI busy. Try again!' });
+    const data = await response.json();
+    const text = data?.choices?.[0]?.message?.content;
+    if (!text) return res.status(502).json({ error: 'No summary generated.' });
+    res.json({ summary: text.trim() });
+  } catch (error) {
+    console.error('Lesson summary error:', error.message);
+    res.status(500).json({ error: 'Something went wrong.' });
+  }
+});
+
+// ── Mini Story — turn a topic into a short story kids love ──
+const MINI_STORY_PROMPT = `You are LoopBot, a creative storyteller for kids (Grades 1–6).
+Turn a science or math learning topic into a fun, engaging mini-story.
+RULES:
+- Write EXACTLY 4 sentences
+- Weave the learning concept naturally into the story
+- Use a relatable scenario (school, playground, space adventure, kitchen, sports, etc.)
+- The final sentence should reinforce what was learned
+- Use 1-2 emoji
+- Keep vocabulary age-appropriate for the given grade`;
+
+app.post('/api/mini-story', aiLimiter, async (req, res) => {
+  try {
+    const { grade, subject, topic } = req.body;
+    if (!grade || grade < 1 || grade > 6) return res.status(400).json({ error: 'Grade required.' });
+    if (!topic || typeof topic !== 'string' || topic.length > 200) return res.status(400).json({ error: 'Topic required (max 200 chars).' });
+    if (!GROQ_API_KEY) return res.status(503).json({ error: 'AI not configured.' });
+
+    // Content safety check
+    const check = isBlocked(topic);
+    if (check.blocked) return res.json({ story: check.reply });
+
+    const userPrompt = `Write a 4-sentence story for a Grade ${grade} student about the ${subject} topic: "${topic}".`;
+    const response = await fetch(GROQ_URL, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages: [
+          { role: 'system', content: MINI_STORY_PROMPT },
+          { role: 'user', content: userPrompt },
+        ],
+        model: GROQ_MODEL,
+        temperature: 0.8,
+        max_tokens: 180,
+      }),
+    });
+    if (!response.ok) return res.status(502).json({ error: 'AI busy. Try again!' });
+    const data = await response.json();
+    const text = data?.choices?.[0]?.message?.content;
+    if (!text) return res.status(502).json({ error: 'No story generated.' });
+    res.json({ story: text.trim() });
+  } catch (error) {
+    console.error('Mini story error:', error.message);
+    res.status(500).json({ error: 'Something went wrong.' });
+  }
+});
+
+// ── AI Tutor — teaches a concept then asks a practice question ──
+const AI_TUTOR_PROMPT = `You are LoopBot, a personal AI tutor for kids (Grades 1–6).
+Teach a concept in a fun way, then ask one practice question to check understanding.
+
+RESPONSE FORMAT — return ONLY valid JSON, no markdown:
+{
+  "lesson": "2-3 sentence engaging explanation. Use simple language. Include 1 real-world analogy. Use 1 emoji.",
+  "question": {
+    "q": "Practice question text?",
+    "a": ["Option A", "Option B", "Option C", "Option D"],
+    "correct": 2,
+    "explanation": "One sentence explanation of why the answer is correct."
+  }
+}
+
+RULES:
+- lesson must be grade-appropriate and engaging
+- question must have exactly 4 unique answer options
+- correct is the 0-based index — VARY its position (don't always use 0)
+- ONLY return valid JSON. No backticks, no markdown, no extra text.`;
+
+app.post('/api/ai-tutor', aiLimiter, async (req, res) => {
+  try {
+    const { grade, subject, topic, linkTitle } = req.body;
+    if (!grade || grade < 1 || grade > 6) return res.status(400).json({ error: 'Grade required.' });
+    if (!topic || typeof topic !== 'string' || topic.length > 200) return res.status(400).json({ error: 'Topic required.' });
+    if (!GROQ_API_KEY) return res.status(503).json({ error: 'AI not configured.' });
+
+    const userPrompt = `Teach a Grade ${grade} student about: "${topic}"${linkTitle ? ` (lesson: ${linkTitle})` : ''} in ${subject}. Return JSON with lesson and a practice question.`;
+    const response = await fetch(GROQ_URL, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages: [
+          { role: 'system', content: AI_TUTOR_PROMPT },
+          { role: 'user', content: userPrompt },
+        ],
+        model: GROQ_MODEL,
+        temperature: 0.5,
+        max_tokens: 400,
+      }),
+    });
+    if (!response.ok) return res.status(502).json({ error: 'AI busy. Try again!' });
+    const data = await response.json();
+    const text = data?.choices?.[0]?.message?.content;
+    if (!text) return res.status(502).json({ error: 'No tutor content generated.' });
+
+    try {
+      const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      const parsed = JSON.parse(cleaned);
+      if (!parsed.lesson || !parsed.question?.q) throw new Error('Missing lesson or question');
+      if (!Array.isArray(parsed.question.a) || parsed.question.a.length < 2) throw new Error('Bad options');
+      const correct = parsed.question.correct;
+      if (typeof correct !== 'number' || correct < 0 || correct >= parsed.question.a.length) throw new Error('Bad correct index');
+      // Reject duplicate answers
+      const lower = parsed.question.a.map(s => String(s).trim().toLowerCase());
+      if (new Set(lower).size !== lower.length) throw new Error('Duplicate answers');
+      res.json({
+        lesson: String(parsed.lesson).slice(0, 500),
+        question: {
+          q: String(parsed.question.q),
+          a: parsed.question.a.map(String),
+          correct: parsed.question.correct,
+          explanation: parsed.question.explanation ? String(parsed.question.explanation) : null,
+        },
+      });
+    } catch (parseErr) {
+      console.error('AI tutor parse error:', parseErr.message, text.slice(0, 300));
+      return res.status(502).json({ error: 'Could not parse tutor content. Try again!' });
+    }
+  } catch (error) {
+    console.error('AI tutor error:', error.message);
+    res.status(500).json({ error: 'Something went wrong.' });
+  }
+});
 
 app.listen(PORT, () => {
   console.log(`LoopLearn Server running on port ${PORT}`);
