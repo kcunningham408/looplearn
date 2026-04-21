@@ -6,6 +6,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 
 const { generateMathQuestions } = require('./mathGenerator');
+const { generateScienceQuestions } = require('./scienceGenerator');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -304,39 +305,7 @@ Analyze their learning patterns and return JSON.`;
   }
 });
 
-// ── AI Question Generation — science questions only (math is deterministic) ──
-const QUESTION_GEN_PROMPT = `You are a quiz question generator for an educational kids' app (Grades 1–6).
-Generate science quiz questions that are age-appropriate, educational, and fun.
-
-RULES:
-- Questions must be grade-appropriate in difficulty and vocabulary.
-- Each question MUST have exactly 4 answer options.
-- Exactly ONE answer must be correct. The other three must be wrong.
-- Wrong answers must be plausible (not obviously silly) but clearly incorrect.
-- Make questions engaging — use real-world scenarios kids relate to.
-- For younger grades (1-2): use simple language, concrete examples.
-- For middle grades (3-4): introduce basic concepts and scientific thinking.
-- For upper grades (5-6): use more complex scenarios and deeper concepts.
-- CRITICAL: Questions MUST test science KNOWLEDGE and FACTS only (e.g. "What do plants need to make food?"). NEVER generate questions that require arithmetic, calculations, counting, or any math operations. If a question requires computing a number, discard it and write a factual science question instead.
-- ALWAYS place the correct answer as the FIRST element (index 0) in the "a" array. Set "correct" to 0.
-- Every answer option must be unique — no duplicates in the "a" array.
-- Include a "correctAnswer" field with the exact text of the correct answer (must match "a"[0] exactly).
-
-RESPONSE FORMAT (JSON array only, no other text):
-[
-  {
-    "q": "Question text?",
-    "a": ["Correct answer", "Wrong answer B", "Wrong answer C", "Wrong answer D"],
-    "correct": 0,
-    "correctAnswer": "Correct answer",
-    "type": "mcq",
-    "explanation": "Brief explanation of why the correct answer is right."
-  }
-]
-
-The "correct" field is ALWAYS 0. The "correctAnswer" field MUST match "a"[0] exactly.
-ONLY return valid JSON array. No markdown, no backticks, no extra text.`;
-
+// ── Question Generation — math (deterministic) + science (local bank) ──
 app.post('/api/generate-questions', aiLimiter, async (req, res) => {
   try {
     const { grade, subject, topics, count = 5, difficulty = 'medium' } = req.body;
@@ -356,107 +325,14 @@ app.post('/api/generate-questions', aiLimiter, async (req, res) => {
       return res.json({ questions, grade, subject, difficulty });
     }
 
-    // ── Science: LLM generation ──
-    if (!GROQ_API_KEY) {
-      return res.status(503).json({ error: 'AI is not configured.' });
-    }
-
-    const topicList = Array.isArray(topics) && topics.length > 0
-      ? topics.join(', ')
-      : getDefaultScienceTopics(grade);
-
-    const userPrompt = `Generate ${questionCount} science knowledge questions for Grade ${grade}.
-Topics: ${topicList}.
-Difficulty: ${difficulty}.
-IMPORTANT: Questions must test science facts and concepts only — do NOT include any math calculations or arithmetic.
-Return JSON array with question, 4 options (correct answer first), correctAnswer text, type "mcq", and explanation.`;
-
-    const response = await fetch(GROQ_URL, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${GROQ_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        messages: [
-          { role: 'system', content: QUESTION_GEN_PROMPT },
-          { role: 'user', content: userPrompt },
-        ],
-        model: GROQ_MODEL,
-        temperature: 0.5,
-        max_tokens: 2000,
-      }),
-    });
-
-    if (!response.ok) {
-      const err = await response.text();
-      console.error('Groq API error:', response.status, err);
-      return res.status(502).json({ error: 'AI is busy. Try again!' });
-    }
-
-    const data = await response.json();
-    const text = data?.choices?.[0]?.message?.content;
-    if (!text) return res.status(502).json({ error: 'Could not generate questions. Try again!' });
-
-    try {
-      const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-      const questions = JSON.parse(cleaned);
-
-      if (!Array.isArray(questions) || questions.length === 0) {
-        return res.status(502).json({ error: 'Invalid questions generated. Try again!' });
-      }
-
-      const validated = questions
-        .filter(q => {
-          if (!q.q || !Array.isArray(q.a) || q.a.length !== 4) return false;
-          // Reject if any answers are duplicates
-          const lower = q.a.map(s => String(s).trim().toLowerCase());
-          if (new Set(lower).size !== lower.length) return false;
-          // Must have at least one non-empty answer to use as correct
-          if (!q.correctAnswer && !q.a[0]) return false;
-          return true;
-        })
-        .map(q => {
-          // Derive correct index from the correctAnswer text field (more reliable than
-          // trusting the LLM's numeric count). Fall back to index 0 (per prompt instructions).
-          const correctText = String(q.correctAnswer || q.a[0]).trim().toLowerCase();
-          const textMatchIdx = q.a.findIndex(a => String(a).trim().toLowerCase() === correctText);
-          const correctIdx = textMatchIdx !== -1 ? textMatchIdx : 0;
-          return {
-            q: String(q.q),
-            a: q.a.map(String),
-            correct: correctIdx,
-            type: q.type || 'mcq',
-            explanation: q.explanation || null,
-          };
-        });
-
-      if (validated.length === 0) {
-        console.error('All generated questions failed validation. Raw response:', text.slice(0, 500));
-        return res.status(502).json({ error: 'Questions failed validation. Try again!' });
-      }
-
-      res.json({ questions: validated, grade, subject, difficulty });
-    } catch {
-      return res.status(502).json({ error: 'Could not parse generated questions. Try again!' });
-    }
+    // ── Science: local deterministic question bank (no AI) ──
+    const questions = generateScienceQuestions({ grade, topics, count: questionCount });
+    return res.json({ questions, grade, subject, difficulty });
   } catch (error) {
     console.error('Question generation error:', error.message);
     res.status(500).json({ error: 'Something went wrong.' });
   }
 });
-
-function getDefaultScienceTopics(grade) {
-  const topics = {
-    1: 'animals, plants, weather, senses, materials',
-    2: 'habitats, life cycles, states of matter, pushes and pulls, earth',
-    3: 'ecosystems, adaptations, forces, simple machines, weather patterns',
-    4: 'energy, electricity, food chains, rocks and minerals, water cycle',
-    5: 'cells, human body systems, chemical changes, space, earth science',
-    6: 'atoms, energy transfer, ecosystems, genetics, earth systems, scientific method',
-  };
-  return topics[grade] || topics[3];
-}
 
 // ── Lesson Summary — kid-friendly or parent-friendly recap after loop ──
 const KID_SUMMARY_PROMPT = `You are LoopBot, a friendly AI tutor for kids (Grades 1–6).
